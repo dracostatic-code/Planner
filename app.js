@@ -103,17 +103,22 @@
       <div class="task-actions"><button class="task-action" type="button" data-edit="${escapeHTML(task.id)}" aria-label="Edit task">✎</button><button class="task-action" type="button" data-delete="${escapeHTML(task.id)}" aria-label="Delete task">×</button></div>
     </article>`;
   }
+  function getActiveRoutine() {
+    return todayISO() >= RETURN_DATE ? ROUTINE : [];
+  }
   function renderRoutine() {
+    const routinesActive = todayISO() >= RETURN_DATE;
     const checks = state.routineChecks[todayISO()] || {};
     const rows = ROUTINE.map(item => {
-      const done = !!checks[item.id];
+      const done = routinesActive && !!checks[item.id];
       return `<article class="task-card ${done ? "completed" : ""}">
-        <input class="task-check" type="checkbox" data-routine="${item.id}" aria-label="Mark ${item.title} complete" ${done ? "checked" : ""}>
+        ${routinesActive ? `<input class="task-check" type="checkbox" data-routine="${item.id}" aria-label="Mark ${item.title} complete" ${done ? "checked" : ""}>` : `<span class="summary-icon" aria-hidden="true">◷</span>`}
         <div class="task-main"><div class="task-title">${item.title}</div><div class="task-meta"><span class="time-tag">${item.time}</span><span class="category-tag">${item.category === "routine" ? "Daily routine" : ""}</span></div><p class="task-notes">${item.detail}</p></div>
       </article>`;
     }).join("");
     const breaks = state.settings.breaks ? `<article class="task-card"><div class="summary-icon">☕</div><div class="task-main"><div class="task-title">Flexible break</div><p class="task-notes">Pause between tasks, stretch, drink water, or simply do nothing for a few minutes. Move this around to suit your day.</p></div></article>` : "";
-    $("scheduleList").innerHTML = rows + breaks;
+    const upcoming = routinesActive ? "" : `<p class="muted">These routines start when you arrive in America on ${prettyDate(RETURN_DATE)}. They do not count toward today’s tasks or progress.</p>`;
+    $("scheduleList").innerHTML = upcoming + rows + breaks;
   }
   function renderToday() {
     renderRoutine();
@@ -121,15 +126,16 @@
     $("todayTasks").innerHTML = tasks.map(t => taskCard(t)).join("");
     $("emptyToday").classList.toggle("hidden", tasks.length > 0);
     const checks = state.routineChecks[todayISO()] || {};
-    const routineDone = ROUTINE.filter(r => checks[r.id]).length;
+    const activeRoutine = getActiveRoutine();
+    const routineDone = activeRoutine.filter(r => checks[r.id]).length;
     const done = tasks.filter(completedToday).length + routineDone;
-    const total = tasks.length + ROUTINE.length;
+    const total = tasks.length + activeRoutine.length;
     const remaining = Math.max(0, total - done);
     const pct = total ? Math.round(done/total*100) : 0;
     $("doneCount").textContent = done;
     $("remainingCount").textContent = remaining;
     $("dailyProgressBar").style.width = `${pct}%`;
-    $("dailyProgressText").textContent = `${pct}% complete · progress, not perfection.`;
+    $("dailyProgressText").textContent = total ? `${pct}% complete · progress, not perfection.` : "No tasks scheduled for today · enjoy your day.";
     $("weatherBanner").classList.toggle("hidden", !state.settings.hotWeather);
   }
   function renderTasks() {
