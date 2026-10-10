@@ -169,6 +169,10 @@
     $("breaksToggle").checked = !!state.settings.breaks;
     $("darkToggle").checked = !!state.settings.dark;
     document.body.classList.toggle("dark", !!state.settings.dark);
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeColorMeta) {
+      themeColorMeta.setAttribute("content", state.settings.dark ? "#101827" : "#234b91");
+    }
     $("themeToggle").textContent = state.settings.dark ? "☼" : "◐";
   }
   function renderHeader() {
