@@ -59,8 +59,7 @@
 
   const startOfWeek = iso => {
     const d = new Date(`${iso}T12:00:00`);
-    const day = (d.getDay() + 6) % 7;
-    d.setDate(d.getDate() - day);
+    d.setDate(d.getDate() - (d.getDay() + 6) % 7);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
 
@@ -84,16 +83,19 @@
   const uid = () =>
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+  function validDate(iso) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+    const date = new Date(`${iso}T12:00:00Z`);
+    return !Number.isNaN(date.getTime()) &&
+      date.toISOString().slice(0, 10) === iso;
+  }
+
   function blankState() {
     return {
       version: 1,
       tasks: [],
       routineChecks: {},
-      settings: {
-        hotWeather: false,
-        breaks: true,
-        dark: false
-      },
+      settings: { hotWeather: false, breaks: true, dark: false },
       createdAt: todayISO()
     };
   }
@@ -102,10 +104,8 @@
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return blankState();
-
       const data = JSON.parse(raw);
       if (!data || !Array.isArray(data.tasks)) return blankState();
-
       return {
         ...blankState(),
         ...data,
@@ -148,16 +148,19 @@
     return task.completed && task.completedDate === todayISO();
   }
 
+  function isPaused(task) {
+    return task.status === "waiting" || task.status === "hold";
+  }
+
   function isActive(task) {
-    return !task.completed;
+    return !task.completed && !isPaused(task);
   }
 
   function getTodayTasks() {
     const today = todayISO();
-
     return state.tasks.filter(t =>
       completedToday(t) ||
-      (!t.completed && (
+      (!t.completed && !isPaused(t) && (
         t.date === today ||
         (!t.date && t.createdDate <= today) ||
         (t.repeat && t.repeat !== "none" && t.date && t.date < today)
@@ -168,16 +171,27 @@
   function taskCard(task, withDate = false) {
     const category = CATEGORY_LABELS[task.category] || "Personal";
     const done = !!task.completed;
+    const paused = isPaused(task);
+    const pinned = task.priorityDate === todayISO();
+    const id = escapeHTML(task.id);
+    const title = escapeHTML(task.title);
+    const statusLabel = task.status === "waiting" ? "Waiting on" : "On hold";
+
+    const action = (name, label, extra = "") =>
+      `<button class="secondary-button" type="button"
+        data-task-action="${name}" data-task-id="${id}" ${extra}
+        style="padding:7px 10px;font-size:.75rem">${label}</button>`;
 
     return `
       <article class="task-card ${done ? "completed" : ""}"
-        data-task-card="${escapeHTML(task.id)}">
+        data-task-card="${id}">
         <input class="task-check" type="checkbox"
-          aria-label="Mark ${escapeHTML(task.title)} complete"
-          data-complete="${escapeHTML(task.id)}"
-          ${done ? "checked" : ""}>
+          aria-label="Mark ${title} complete"
+          data-complete="${id}"
+          ${done ? "checked" : ""}
+          ${paused && !done ? "disabled" : ""}>
         <div class="task-main">
-          <div class="task-title">${escapeHTML(task.title)}</div>
+          <div class="task-title">${title}</div>
           <div class="task-meta">
             <span class="category-tag">
               ${CATEGORY_ICONS[task.category] || "🌿"}
@@ -191,18 +205,32 @@
             ${withDate && task.date ? `
               <span class="date-tag">${escapeHTML(task.date)}</span>
             ` : ""}
+            ${paused && !done ? `
+              <span class="category-tag">${statusLabel}</span>
+            ` : ""}
           </div>
           ${task.notes ? `
             <p class="task-notes">${escapeHTML(task.notes)}</p>
           ` : ""}
+          ${paused && task.holdReason ? `
+            <p class="task-notes">${escapeHTML(task.holdReason)}</p>
+          ` : ""}
+          <div class="button-stack" style="margin-top:10px">
+            ${!paused && (!done || pinned)
+              ? action("pin", pinned ? "★ Unpin" : "☆ Top three",
+                `aria-pressed="${pinned}"`)
+              : ""}
+            ${!done
+              ? action("tomorrow", "Tomorrow") + action("date", "Choose date")
+              : ""}
+            ${paused && !done ? action("resume", "Resume") : ""}
+          </div>
         </div>
         <div class="task-actions">
           <button class="task-action" type="button"
-            data-edit="${escapeHTML(task.id)}"
-            aria-label="Edit task">✎</button>
+            data-edit="${id}" aria-label="Edit ${title}">✎</button>
           <button class="task-action" type="button"
-            data-delete="${escapeHTML(task.id)}"
-            aria-label="Delete task">×</button>
+            data-delete="${id}" aria-label="Delete ${title}">×</button>
         </div>
       </article>
     `;
@@ -216,7 +244,15 @@
       (a.createdAt || 0) - (b.createdAt || 0)
     );
 
-    $("todayTasks").innerHTML = tasks.map(t => taskCard(t)).join("");
+    const pinned = tasks
+      .filter(t => t.priorityDate === todayISO()).slice(0, 3);
+
+    $("topThreeTasks").innerHTML = pinned.map(t => taskCard(t)).join("");
+    $("topThreeEmpty").classList.toggle("hidden", pinned.length > 0);
+    $("topThreeCount").textContent = `${pinned.length}/3 selected`;
+
+    const otherTasks = tasks.filter(t => !pinned.some(p => p.id === t.id));
+    $("todayTasks").innerHTML = otherTasks.map(t => taskCard(t)).join("");
     $("emptyToday").classList.toggle("hidden", tasks.length > 0);
 
     const checks = state.routineChecks[todayISO()] || {};
@@ -224,11 +260,10 @@
     const routineDone = activeRoutine.filter(r => checks[r.id]).length;
     const done = tasks.filter(completedToday).length + routineDone;
     const total = tasks.length + activeRoutine.length;
-    const remaining = Math.max(0, total - done);
     const pct = total ? Math.round(done / total * 100) : 0;
 
     $("doneCount").textContent = done;
-    $("remainingCount").textContent = remaining;
+    $("remainingCount").textContent = Math.max(0, total - done);
     $("dailyProgressBar").style.width = `${pct}%`;
     $("dailyProgressText").textContent = total
       ? `${pct}% complete · progress, not perfection.`
@@ -257,27 +292,23 @@
   function renderProgress() {
     const weekStart = startOfWeek(todayISO());
     const weekEnd = dateShift(weekStart, 6);
-
     const createdThisWeek = state.tasks.filter(t =>
       t.createdDate >= weekStart && t.createdDate <= weekEnd
     );
-
     const completedThisWeek = state.tasks.filter(t =>
       t.completed &&
       t.completedDate >= weekStart &&
       t.completedDate <= weekEnd
     );
-
     const pct = createdThisWeek.length
       ? Math.round(completedThisWeek.length / createdThisWeek.length * 100)
       : (completedThisWeek.length ? 100 : 0);
 
-    $("weeklyPercent").textContent = `${pct}% complete`;
+    $("weeklyPercent").textContent = `${Math.min(100, pct)}% complete`;
     $("weeklyProgressBar").style.width = `${Math.min(100, pct)}%`;
     $("weeklySummary").textContent = completedThisWeek.length
       ? `You've completed ${completedThisWeek.length} task${completedThisWeek.length === 1 ? "" : "s"} this week. Keep the pace realistic.`
       : "A fresh week is a chance to choose a few useful next steps.";
-
     $("weekDone").textContent = completedThisWeek.length;
     $("weekAdded").textContent = createdThisWeek.length;
 
@@ -291,7 +322,6 @@
       );
 
     if (!hasCompletion(cursor)) cursor = dateShift(cursor, -1);
-
     while (hasCompletion(cursor) && streak < 365) {
       streak++;
       cursor = dateShift(cursor, -1);
@@ -308,16 +338,13 @@
           t.createdDate >= weekStart &&
           t.createdDate <= weekEnd
         );
-
         const done = items.filter(t =>
           t.completed &&
           t.completedDate >= weekStart &&
           t.completedDate <= weekEnd
         ).length;
-
         const percent = items.length
-          ? Math.round(done / items.length * 100)
-          : 0;
+          ? Math.round(done / items.length * 100) : 0;
 
         return `
           <div>
@@ -337,14 +364,12 @@
     $("hotWeatherToggle").checked = !!state.settings.hotWeather;
     $("breaksToggle").checked = !!state.settings.breaks;
     $("darkToggle").checked = !!state.settings.dark;
-
     document.body.classList.toggle("dark", !!state.settings.dark);
 
     const themeColorMeta = document.querySelector('meta[name="theme-color"]');
     if (themeColorMeta) {
       themeColorMeta.setAttribute(
-        "content",
-        state.settings.dark ? "#101827" : "#234b91"
+        "content", state.settings.dark ? "#101827" : "#234b91"
       );
     }
 
@@ -356,7 +381,6 @@
     const description = document.querySelector(
       "#view-settings .settings-card > .muted"
     );
-
     if (description) {
       description.textContent =
         "Manage routines from Today using Add routine, the pencil to edit, or × to delete. Each routine repeats daily from its start date.";
@@ -366,10 +390,10 @@
   function renderHeader() {
     const today = todayISO();
     $("todayLabel").textContent = prettyDate(today);
-
-    const target = new Date(`${RETURN_DATE}T12:00:00`);
-    const current = new Date(`${today}T12:00:00`);
-    const diff = Math.round((target - current) / 86400000);
+    const diff = Math.round(
+      (new Date(`${RETURN_DATE}T12:00:00`) -
+        new Date(`${today}T12:00:00`)) / 86400000
+    );
 
     if (diff > 0) {
       $("countdownTitle").textContent = "Your next chapter is getting closer.";
@@ -394,23 +418,20 @@
     renderToday();
     renderTasks();
     renderProgress();
+    renderJournalPrompt();
   }
 
   function switchView(view) {
     currentView = view;
-
     document.querySelectorAll(".tab").forEach(btn =>
       btn.classList.toggle("active", btn.dataset.view === view)
     );
-
     document.querySelectorAll(".view").forEach(el =>
       el.classList.toggle("hidden", el.id !== `view-${view}`)
     );
-
     if (view === "progress") renderProgress();
     if (view === "today") renderToday();
     if (view === "tasks") renderTasks();
-
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -420,19 +441,20 @@
     $("dialogTitle").textContent = task ? "Edit task" : "Add a task";
     $("taskTitle").value = task ? task.title : "";
     $("taskCategory").value = task ? task.category : "house";
-
     if (!$("taskCategory").value) {
       $("taskCategory").value = state.customTabs[0].id;
     }
-
     $("taskDate").value = task ? (task.date || todayISO()) : todayISO();
     $("taskNotes").value = task ? (task.notes || "") : "";
     $("taskRepeat").value = task?.repeat || "none";
+    $("taskStatus").value = task?.status || "active";
+    $("taskHoldReason").value = task?.holdReason || "";
 
     document.querySelectorAll("[data-repeat-day]").forEach(input => {
       input.checked = (task?.repeatDays || []).includes(Number(input.value));
     });
 
+    updateHoldReason();
     updateRepeatDays();
     $("taskDialog").showModal();
     setTimeout(() => $("taskTitle").focus(), 50);
@@ -440,7 +462,6 @@
 
   function saveTaskFromForm(event) {
     event.preventDefault();
-
     const title = $("taskTitle").value.trim();
     if (!title) return;
 
@@ -452,6 +473,8 @@
       return;
     }
 
+    const status = $("taskStatus").value;
+    const holdReason = $("taskHoldReason").value.trim();
     const repeat = $("taskRepeat").value;
     const repeatDays = Array.from(
       document.querySelectorAll("[data-repeat-day]:checked")
@@ -461,14 +484,12 @@
       alert("Choose at least one weekday.");
       return;
     }
-
     if (existing?.completed && repeat !== "none") {
       alert("Uncheck this completed task before making it repeat.");
       return;
     }
 
     let taskDate = $("taskDate").value || "";
-
     if (repeat !== "none") {
       if (!taskDate) {
         alert("Choose a start date for this repeating task.");
@@ -487,6 +508,11 @@
       date: taskDate,
       repeat,
       repeatDays: repeat === "days" ? repeatDays : [],
+      status,
+      holdReason: status === "active" ? "" : holdReason,
+      priorityDate: status === "active" &&
+        (!taskDate || taskDate <= todayISO())
+        ? (existing?.priorityDate || "") : "",
       notes: $("taskNotes").value.trim(),
       completed: existing ? existing.completed : false,
       completedDate: existing ? existing.completedDate : "",
@@ -510,24 +536,24 @@
   function toggleTask(id, checked) {
     const task = state.tasks.find(t => t.id === id);
     if (!task || task.completed === checked) return;
+    if (checked && isPaused(task)) {
+      render();
+      return;
+    }
 
     if (!checked && task.nextOccurrenceId) {
       const next = state.tasks.find(t => t.id === task.nextOccurrenceId);
-
       if (next?.completed || next?.nextOccurrenceId) {
         alert("Undo the most recent occurrence first.");
         render();
         return;
       }
-
-      if (
-        next &&
-        !confirm("Undo this completion and remove its next scheduled occurrence?")
-      ) {
+      if (next && !confirm(
+        "Undo this completion and remove its next scheduled occurrence?"
+      )) {
         render();
         return;
       }
-
       state.tasks = state.tasks.filter(t => t.id !== task.nextOccurrenceId);
       delete task.nextOccurrenceId;
     }
@@ -538,22 +564,22 @@
 
     if (checked && task.repeat && task.repeat !== "none") {
       const nextDate = nextRepeatDate(task);
-
       if (nextDate) {
         const nextId = uid();
         task.nextOccurrenceId = nextId;
-
         const next = {
           ...task,
           id: nextId,
           date: nextDate,
+          priorityDate: "",
+          status: "active",
+          holdReason: "",
           completed: false,
           completedDate: "",
           createdDate: todayISO(),
           createdAt: Date.now(),
           updatedAt: Date.now()
         };
-
         delete next.nextOccurrenceId;
         state.tasks.push(next);
       }
@@ -561,7 +587,6 @@
 
     saveState();
     render();
-
     if (checked && task.nextOccurrenceId) {
       showToast("Completed. Next occurrence scheduled.");
     }
@@ -580,28 +605,103 @@
     if (!task) return;
 
     const note = task.repeat && task.repeat !== "none"
-      ? (
-        task.completed
-          ? "This removes this history entry; its next occurrence stays."
-          : "This also stops future repeats of this task."
-      )
+      ? (task.completed
+        ? "This removes this history entry; its next occurrence stays."
+        : "This also stops future repeats of this task.")
       : "This cannot be undone unless you have a backup.";
 
     if (!confirm(`Delete "${task.title}"? ${note}`)) return;
-
     state.tasks = state.tasks.filter(t => t.id !== id);
     saveState();
     render();
     showToast("Task deleted.");
   }
 
+  function togglePriority(id) {
+    const task = state.tasks.find(t => t.id === id);
+    if (!task) return;
+
+    if (task.priorityDate === todayISO()) {
+      task.priorityDate = "";
+    } else {
+      const eligible = getTodayTasks();
+      if (
+        task.completed || isPaused(task) ||
+        !eligible.some(t => t.id === id)
+      ) {
+        alert("Choose an active task from today's list. You can reschedule a future task to today first.");
+        return;
+      }
+      if (eligible.filter(t => t.priorityDate === todayISO()).length >= 3) {
+        alert("You already have three priorities. Unpin one before choosing another.");
+        return;
+      }
+      task.priorityDate = todayISO();
+    }
+
+    saveState();
+    render();
+  }
+
+  function rescheduleTask(id, date) {
+    const task = state.tasks.find(t => t.id === id);
+    if (!task || task.completed) return;
+    if (!validDate(date)) {
+      alert("Please use a valid date, such as 2026-11-11.");
+      return;
+    }
+
+    if (task.repeat === "days") {
+      date = matchingWeekday(date, task.repeatDays || []);
+    }
+    task.date = date;
+    task.priorityDate = "";
+    task.updatedAt = Date.now();
+    saveState();
+    render();
+    showToast(`Rescheduled to ${prettyDate(date)}.`);
+  }
+
+  function resumeTask(id) {
+    const task = state.tasks.find(t => t.id === id);
+    if (!task || task.completed) return;
+
+    task.status = "active";
+    task.holdReason = "";
+    if (task.date && task.date < todayISO()) {
+      task.date = task.repeat === "days"
+        ? matchingWeekday(todayISO(), task.repeatDays || [])
+        : todayISO();
+    }
+    task.updatedAt = Date.now();
+    saveState();
+    render();
+    showToast("Task resumed.");
+  }
+
   function handleDelegatedClick(event) {
+    const action = event.target.closest("[data-task-action]");
+    if (action) {
+      const id = action.dataset.taskId;
+      if (action.dataset.taskAction === "pin") togglePriority(id);
+      if (action.dataset.taskAction === "tomorrow") {
+        rescheduleTask(id, dateShift(todayISO(), 1));
+      }
+      if (action.dataset.taskAction === "date") {
+        const task = state.tasks.find(t => t.id === id);
+        if (!task) return;
+        const answer = prompt("New date: YYYY-MM-DD", task.date || todayISO());
+        if (answer !== null) rescheduleTask(id, answer.trim());
+      }
+      if (action.dataset.taskAction === "resume") resumeTask(id);
+      return;
+    }
+
     const edit = event.target.closest("[data-edit]");
     const del = event.target.closest("[data-delete]");
 
     if (edit) {
       const task = state.tasks.find(t => t.id === edit.dataset.edit);
-
       if (task?.completed && task.repeat && task.repeat !== "none") {
         alert("Edit the next unfinished occurrence to change this repeating task.");
       } else if (task) {
@@ -634,19 +734,15 @@
 
   async function importBackup(file) {
     if (!file) return;
-
     try {
       const parsed = JSON.parse(await file.text());
       const data = parsed.data || parsed;
-
       if (
-        !data ||
-        !Array.isArray(data.tasks) ||
+        !data || !Array.isArray(data.tasks) ||
         typeof data.settings !== "object"
       ) {
         throw new Error("This file doesn't look like a planner backup.");
       }
-
       if (!confirm(
         "Import this backup and replace the planner data currently on this phone? Export your current data first if you may need it."
       )) return;
@@ -675,13 +771,120 @@
     if (!confirm(
       "Reset every task, routine check and setting on this phone? Export a backup first if you want to keep your data."
     )) return;
-
     if (!confirm("Are you absolutely sure? This cannot be undone.")) return;
-
     state = blankState();
     render();
     saveState();
     showToast("Planner reset.");
+  }
+
+  // Today's top three
+  const prioritySection = document.createElement("section");
+  prioritySection.style.marginTop = "24px";
+  prioritySection.innerHTML = `
+    <div class="section-heading compact">
+      <div>
+        <p class="eyebrow">FOCUS FOR TODAY</p>
+        <h3>Today's top three</h3>
+      </div>
+      <span id="topThreeCount" class="muted"></span>
+    </div>
+    <p class="muted" style="font-size:.82rem">
+      Choose ☆ Top three on a task to pin it here.
+      Your choices reset each day.
+    </p>
+    <div id="topThreeTasks" class="task-list"></div>
+    <p id="topThreeEmpty" class="muted">
+      Pick up to three things that matter most today.
+    </p>
+  `;
+  $("todayTasks").previousElementSibling.before(prioritySection);
+
+  // Task status fields
+  const statusControls = document.createElement("div");
+  statusControls.innerHTML = `
+    <label class="field-label" for="taskStatus">Status</label>
+    <select id="taskStatus" class="field-input">
+      <option value="active">Active</option>
+      <option value="waiting">Waiting on</option>
+      <option value="hold">On hold</option>
+    </select>
+    <div id="holdReasonFields" class="hidden">
+      <label class="field-label" for="taskHoldReason">
+        What are you waiting for? (optional)
+      </label>
+      <input id="taskHoldReason" class="field-input" type="text"
+        maxlength="200"
+        placeholder="Supplies, another person, or arriving in America…">
+      <p class="muted" style="font-size:.8rem">
+        Paused tasks stay in Task tracker and do not count toward
+        today's outstanding tasks.
+      </p>
+    </div>
+  `;
+  $("taskNotes").previousElementSibling.before(statusControls);
+
+  function updateHoldReason() {
+    $("holdReasonFields").classList.toggle(
+      "hidden", $("taskStatus").value === "active"
+    );
+  }
+  $("taskStatus").addEventListener("change", updateHoldReason);
+
+  // Journal check-in
+  const journalPrompts = [
+    "What went well today, even if it was something small?",
+    "What felt difficult, and what support would help?",
+    "What would you like your PB and MB to understand about today?",
+    "What helped you feel more settled or confident today?",
+    "What is one manageable next step you can take tomorrow?"
+  ];
+
+  const journalLink = document.querySelector(
+    'a[href^="https://docs.google.com/document/"]'
+  );
+
+  if (journalLink) {
+    const journalCard = document.createElement("div");
+    journalCard.className = "settings-card";
+    journalCard.style.marginTop = "18px";
+    journalCard.innerHTML = `
+      <p class="eyebrow">JOURNAL CHECK-IN</p>
+      <p id="journalPrompt" style="line-height:1.5"></p>
+      <button id="nextJournalPrompt" class="text-button" type="button">
+        Try another prompt
+      </button>
+      <p class="muted" style="font-size:.8rem;margin-bottom:0">
+        Use the shared journal button below to write your reflection.
+      </p>
+    `;
+    journalLink.before(journalCard);
+
+    $("nextJournalPrompt").addEventListener("click", () => {
+      state.journalPromptChoice = {
+        date: todayISO(),
+        index: (journalPromptIndex() + 1) % journalPrompts.length
+      };
+      saveState();
+      renderJournalPrompt();
+    });
+  }
+
+  function journalPromptIndex() {
+    const choice = state.journalPromptChoice;
+    if (choice?.date === todayISO() && Number.isInteger(choice.index)) {
+      return ((choice.index % journalPrompts.length) +
+        journalPrompts.length) % journalPrompts.length;
+    }
+    return Math.floor(
+      new Date(`${todayISO()}T12:00:00Z`).getTime() / 86400000
+    ) % journalPrompts.length;
+  }
+
+  function renderJournalPrompt() {
+    if ($("journalPrompt")) {
+      $("journalPrompt").textContent = journalPrompts[journalPromptIndex()];
+    }
   }
 
   // Recurring task schedules
@@ -691,36 +894,28 @@
     const valid = days.filter(day =>
       Number.isInteger(day) && day >= 0 && day <= 6
     );
-
     if (!valid.length) return date;
-
     for (let offset = 0; offset < 7; offset++) {
       const candidate = dateShift(date, offset);
-
       if (valid.includes(new Date(`${candidate}T12:00:00`).getDay())) {
         return candidate;
       }
     }
-
     return date;
   }
 
   function nextRepeatDate(task) {
     const base = task.date && task.date > todayISO()
-      ? task.date
-      : todayISO();
+      ? task.date : todayISO();
 
     if (task.repeat === "daily") return dateShift(base, 1);
-
     if (task.repeat === "weekly") {
       const weekday = new Date(`${task.date || base}T12:00:00`).getDay();
       return matchingWeekday(dateShift(base, 1), [weekday]);
     }
-
     if (task.repeat === "days" && task.repeatDays?.length) {
       return matchingWeekday(dateShift(base, 1), task.repeatDays);
     }
-
     return null;
   }
 
@@ -730,7 +925,6 @@
     return (task.repeatDays || []).map(day => weekdayNames[day]).join(", ");
   }
 
-  // Add repeat fields to the existing task form
   const repeatControls = document.createElement("div");
   repeatControls.innerHTML = `
     <label class="field-label" for="taskRepeat">Repeat</label>
@@ -753,23 +947,21 @@
       </div>
     </fieldset>
     <p class="muted" style="font-size:.8rem">
-      Completing a repeating task saves that completion and schedules its next date.
-      An unfinished occurrence stays open until you complete or reschedule it.
+      Completing a repeating task saves that completion and schedules
+      its next date. An unfinished occurrence stays open until you
+      complete or reschedule it.
     </p>
   `;
-
   $("taskNotes").previousElementSibling.before(repeatControls);
 
   function updateRepeatDays() {
     $("repeatDayChoices").classList.toggle(
-      "hidden",
-      $("taskRepeat").value !== "days"
+      "hidden", $("taskRepeat").value !== "days"
     );
   }
-
   $("taskRepeat").addEventListener("change", updateRepeatDays);
 
-  // Navigation and task controls
+  // Navigation and task events
   document.querySelectorAll(".tab").forEach(btn =>
     btn.addEventListener("click", () => switchView(btn.dataset.view))
   );
@@ -785,7 +977,6 @@
   $("taskDialog").addEventListener("click", event => {
     if (event.target === $("taskDialog")) $("taskDialog").close();
   });
-
   $("taskDialog").addEventListener("close", () => {
     if (currentView === "today") $("addTaskTop").focus();
   });
@@ -796,11 +987,9 @@
   document.addEventListener("change", event => {
     const taskCheck = event.target.closest("[data-complete]");
     const routineCheck = event.target.closest("[data-routine]");
-
     if (taskCheck) {
       toggleTask(taskCheck.dataset.complete, taskCheck.checked);
     }
-
     if (routineCheck) {
       toggleRoutine(routineCheck.dataset.routine, routineCheck.checked);
     }
@@ -819,35 +1008,28 @@
     saveState();
     render();
   });
-
   $("breaksToggle").addEventListener("change", event => {
     state.settings.breaks = event.target.checked;
     saveState();
     render();
   });
-
   $("darkToggle").addEventListener("change", event => {
     state.settings.dark = event.target.checked;
     saveState();
     render();
   });
-
   $("themeToggle").addEventListener("click", () => {
     state.settings.dark = !state.settings.dark;
     saveState();
     render();
   });
-
   $("dismissWeather").addEventListener("click", () => {
     $("weatherBanner").classList.add("hidden");
   });
-
   $("exportButton").addEventListener("click", exportBackup);
-
   $("importInput").addEventListener("change", event =>
     importBackup(event.target.files && event.target.files[0])
   );
-
   $("resetButton").addEventListener("click", resetAll);
 
   // Custom category tabs
@@ -858,9 +1040,7 @@
     if (!Array.isArray(state.customTabs) || !state.customTabs.length) {
       state.customTabs = Object.entries(defaultTabLabels).map(
         ([id, name]) => ({
-          id,
-          name,
-          icon: defaultTabIcons[id] || "📁"
+          id, name, icon: defaultTabIcons[id] || "📁"
         })
       );
     }
@@ -881,7 +1061,6 @@
     Object.keys(CATEGORY_LABELS).forEach(key => {
       delete CATEGORY_LABELS[key];
     });
-
     Object.keys(CATEGORY_ICONS).forEach(key => {
       delete CATEGORY_ICONS[key];
     });
@@ -908,7 +1087,6 @@
       `).join("");
 
     const selectedCategory = $("taskCategory").value;
-
     $("taskCategory").innerHTML = state.customTabs.map(tab => `
       <option value="${escapeHTML(tab.id)}">
         ${escapeHTML(tab.name)}
@@ -918,7 +1096,6 @@
     if (state.customTabs.some(tab => tab.id === selectedCategory)) {
       $("taskCategory").value = selectedCategory;
     }
-
     $("deleteCategoryTab").disabled = taskFilter === "all";
   }
 
@@ -933,13 +1110,11 @@
       Delete selected tab
     </button>
   `;
-
   $("taskFilters").after(tabControls);
 
   $("addCategoryTab").addEventListener("click", () => {
     const answer = prompt("What would you like to name your new tab?");
     if (answer === null) return;
-
     const name = answer.trim();
     if (!name) return;
 
@@ -963,7 +1138,6 @@
 
   $("deleteCategoryTab").addEventListener("click", () => {
     if (taskFilter === "all") return;
-
     if (state.customTabs.length === 1) {
       alert("Keep at least one category. Add another tab first.");
       return;
@@ -971,22 +1145,18 @@
 
     const selected = state.customTabs.find(tab => tab.id === taskFilter);
     if (!selected) return;
-
     const destination = state.customTabs.find(tab => tab.id !== selected.id);
     const taskCount = state.tasks.filter(
       task => task.category === selected.id
     ).length;
-
     const message = taskCount
       ? `Delete "${selected.name}"? Its ${taskCount} task(s) will move to "${destination.name}".`
       : `Delete "${selected.name}"?`;
 
     if (!confirm(message)) return;
-
     state.tasks.forEach(task => {
       if (task.category === selected.id) task.category = destination.id;
     });
-
     state.customTabs = state.customTabs.filter(tab => tab.id !== selected.id);
     taskFilter = "all";
     saveState();
@@ -998,15 +1168,13 @@
   function ensureEditableRoutines() {
     if (!Array.isArray(state.routines)) {
       state.routines = ROUTINE.map(item => ({
-        ...item,
-        startDate: RETURN_DATE
+        ...item, startDate: RETURN_DATE
       }));
     }
   }
 
   function getActiveRoutine() {
     ensureEditableRoutines();
-
     return state.routines.filter(item =>
       !item.startDate || item.startDate <= todayISO()
     );
@@ -1018,34 +1186,24 @@
 
     const name = prompt("Routine name:", existing?.title || "");
     if (name === null || !name.trim()) return;
-
     const time = prompt(
       "Time or time window (for example 8:00 AM):",
       existing?.time || ""
     );
     if (time === null) return;
-
     const start = prompt(
-      "Start date: YYYY-MM-DD",
-      existing?.startDate || todayISO()
+      "Start date: YYYY-MM-DD", existing?.startDate || todayISO()
     );
     if (start === null) return;
 
     const startDate = start.trim();
-    const date = new Date(`${startDate}T12:00:00Z`);
-
-    if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(startDate) ||
-      Number.isNaN(date.getTime()) ||
-      date.toISOString().slice(0, 10) !== startDate
-    ) {
+    if (!validDate(startDate)) {
       alert("Please use a valid date, such as 2026-11-11.");
       return;
     }
 
     const detail = prompt("Optional note:", existing?.detail || "");
     if (detail === null) return;
-
     const item = {
       id: existing ? existing.id : `routine-${uid()}`,
       title: name.trim(),
@@ -1060,7 +1218,6 @@
     } else {
       state.routines.push(item);
     }
-
     saveState();
     render();
     showToast(existing ? "Routine updated." : "Routine added.");
@@ -1073,20 +1230,20 @@
     const rows = state.routines.map(item => {
       const active = !item.startDate || item.startDate <= todayISO();
       const done = active && !!checks[item.id];
-      const safeId = escapeHTML(item.id);
+      const id = escapeHTML(item.id);
+      const title = escapeHTML(item.title);
 
       return `
         <article class="task-card ${done ? "completed" : ""}">
           ${active ? `
             <input class="task-check" type="checkbox"
-              data-routine="${safeId}"
-              ${done ? "checked" : ""}
-              aria-label="Mark ${escapeHTML(item.title)} complete">
+              data-routine="${id}" ${done ? "checked" : ""}
+              aria-label="Mark ${title} complete">
           ` : `
             <span class="summary-icon" aria-hidden="true">◷</span>
           `}
           <div class="task-main">
-            <div class="task-title">${escapeHTML(item.title)}</div>
+            <div class="task-title">${title}</div>
             <div class="task-meta">
               ${item.time ? `
                 <span class="time-tag">${escapeHTML(item.time)}</span>
@@ -1106,11 +1263,11 @@
           </div>
           <div class="task-actions">
             <button class="task-action" type="button"
-              data-routine-edit="${safeId}"
-              aria-label="Edit ${escapeHTML(item.title)}">✎</button>
+              data-routine-edit="${id}"
+              aria-label="Edit ${title}">✎</button>
             <button class="task-action" type="button"
-              data-routine-delete="${safeId}"
-              aria-label="Delete ${escapeHTML(item.title)}">×</button>
+              data-routine-delete="${id}"
+              aria-label="Delete ${title}">×</button>
           </div>
         </article>
       `;
@@ -1142,22 +1299,16 @@
     const button = event.target.closest("button");
     if (!button) return;
 
-    if (button.hasAttribute("data-routine-add")) {
-      editDailyRoutine();
-    }
-
+    if (button.hasAttribute("data-routine-add")) editDailyRoutine();
     if (button.hasAttribute("data-routine-edit")) {
       editDailyRoutine(button.dataset.routineEdit);
     }
-
     if (button.hasAttribute("data-routine-delete")) {
       const id = button.dataset.routineDelete;
       const item = state.routines.find(r => r.id === id);
-
       if (!item || !confirm(`Delete the daily routine "${item.title}"?`)) {
         return;
       }
-
       state.routines = state.routines.filter(r => r.id !== id);
       saveState();
       render();
