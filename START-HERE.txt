@@ -1,0 +1,13 @@
+MY DAILY PLANNER — START HERE
+
+1. Extract this ZIP on your computer.
+2. Create a GitHub repository.
+3. Upload the CONTENTS of this folder (not just the ZIP) to the repository root.
+4. In GitHub, open Settings > Pages.
+5. Select Deploy from a branch, branch main, folder /(root), then Save.
+6. Wait for the Pages URL to appear, then open it on your Android phone in Chrome.
+7. Use Chrome's menu > Install app or Add to Home screen.
+
+Your planner data is stored locally in the browser on the device you use. Use Settings > Export backup regularly. It does not sync automatically between devices.
+
+See README.md for the full steps.

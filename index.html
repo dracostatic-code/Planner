@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#234c43">
+  <meta name="description" content="A private, phone-first daily planner with offline support.">
+  <title>My Daily Planner</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">YOUR SPACE · YOUR PACE</p>
+      <h1>My Daily Planner</h1>
+      <p id="todayLabel" class="muted"></p>
+    </div>
+    <button id="themeToggle" class="icon-button" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">◐</button>
+  </header>
+
+  <main class="app-shell">
+    <section class="welcome-card">
+      <div class="welcome-copy">
+        <p class="eyebrow light">YOUR RETURN TO AMERICA</p>
+        <h2 id="countdownTitle">One step at a time.</h2>
+        <p id="countdownText">Small, steady progress counts.</p>
+      </div>
+      <div class="date-bubble" aria-hidden="true"><span id="countdownNumber">—</span><small>days</small></div>
+    </section>
+
+    <nav class="tabs" aria-label="Planner sections">
+      <button class="tab active" data-view="today" type="button">Today</button>
+      <button class="tab" data-view="tasks" type="button">Tasks</button>
+      <button class="tab" data-view="progress" type="button">Progress</button>
+      <button class="tab" data-view="settings" type="button">Settings</button>
+    </nav>
+
+    <section id="view-today" class="view">
+      <div class="section-heading">
+        <div><p class="eyebrow">YOUR DAY</p><h2>Daily rhythm</h2></div>
+        <button id="addTaskTop" class="primary-button" type="button">＋ Add task</button>
+      </div>
+      <div id="weatherBanner" class="weather-banner hidden">
+        <span class="weather-icon">☀</span>
+        <div><strong>Hot-weather mode is on</strong><p>Prioritise water, shade, cooler hours and slower pacing.</p></div>
+        <button id="dismissWeather" class="quiet-button" type="button" aria-label="Dismiss hot weather reminder">×</button>
+      </div>
+      <div class="summary-grid">
+        <article class="summary-card"><span class="summary-icon">✓</span><div><strong id="doneCount">0</strong><span>completed today</span></div></article>
+        <article class="summary-card"><span class="summary-icon">☷</span><div><strong id="remainingCount">0</strong><span>still on your list</span></div></article>
+      </div>
+      <div class="progress-track" aria-label="Daily completion"><div id="dailyProgressBar" class="progress-fill"></div></div>
+      <p id="dailyProgressText" class="progress-caption">0% complete · progress, not perfection.</p>
+
+      <div class="section-heading compact"><div><p class="eyebrow">ANCHOR POINTS</p><h3>Keep these steady</h3></div></div>
+      <div id="scheduleList" class="task-list"></div>
+
+      <div class="section-heading compact"><div><p class="eyebrow">YOUR CHECKLIST</p><h3>Today's tasks</h3></div><button id="addTaskInline" class="text-button" type="button">＋ Add</button></div>
+      <div id="todayTasks" class="task-list"></div>
+      <div id="emptyToday" class="empty-state hidden"><span>🌱</span><strong>Nothing else on the list.</strong><p>You can add a task, take a break, or call today done.</p></div>
+    </section>
+
+    <section id="view-tasks" class="view hidden">
+      <div class="section-heading"><div><p class="eyebrow">BUILD MOMENTUM</p><h2>Task tracker</h2></div><button id="addTaskPage" class="primary-button" type="button">＋ Add task</button></div>
+      <p class="muted intro">Keep projects manageable. Add one clear next action rather than trying to solve the whole project at once.</p>
+      <div class="filter-row" id="taskFilters">
+        <button class="filter-chip selected" data-filter="all" type="button">All</button>
+        <button class="filter-chip" data-filter="house" type="button">House</button>
+        <button class="filter-chip" data-filter="practical" type="button">Practical jobs</button>
+        <button class="filter-chip" data-filter="website" type="button">Website</button>
+        <button class="filter-chip" data-filter="leadbright" type="button">LeadBright</button>
+        <button class="filter-chip" data-filter="personal" type="button">Personal</button>
+      </div>
+      <div id="allTasks" class="task-list"></div>
+      <div id="emptyTasks" class="empty-state hidden"><span>🪴</span><strong>No tasks in this view.</strong><p>Add something small and specific when you're ready.</p></div>
+    </section>
+
+    <section id="view-progress" class="view hidden">
+      <div class="section-heading"><div><p class="eyebrow">LOOK BACK, MOVE FORWARD</p><h2>Weekly progress</h2></div></div>
+      <div class="weekly-card">
+        <p class="eyebrow light">THIS WEEK</p><h3 id="weeklyPercent">0% complete</h3><p id="weeklySummary">Every checked-off task is a little bit of evidence that you showed up.</p>
+        <div class="progress-track pale"><div id="weeklyProgressBar" class="progress-fill"></div></div>
+      </div>
+      <div class="stats-grid">
+        <article class="stat-card"><span>Tasks completed</span><strong id="weekDone">0</strong></article>
+        <article class="stat-card"><span>Tasks added</span><strong id="weekAdded">0</strong></article>
+        <article class="stat-card"><span>Current streak</span><strong id="streakCount">0 days</strong></article>
+        <article class="stat-card"><span>Active projects</span><strong id="activeProjects">0</strong></article>
+      </div>
+      <div class="section-heading compact"><div><p class="eyebrow">BY CATEGORY</p><h3>Where your effort went</h3></div></div>
+      <div id="categoryProgress" class="category-progress"></div>
+      <p class="muted footnote">Progress is a guide, not a score. Rest, care work and unexpected jobs count too.</p>
+    </section>
+
+    <section id="view-settings" class="view hidden">
+      <div class="section-heading"><div><p class="eyebrow">MAKE IT YOURS</p><h2>Settings & data</h2></div></div>
+      <article class="settings-card">
+        <h3>Daily routine</h3>
+        <p class="muted">These anchor points appear each day. You can mark them complete from Today.</p>
+        <div class="routine-line"><span>🐾 Animal feeding</span><strong>8:00 AM</strong></div>
+        <div class="routine-line"><span>🐾 Animal feeding</span><strong>5:30 PM</strong></div>
+        <div class="routine-line"><span>🍽️ Dinner window</span><strong>6:00–7:00 PM</strong></div>
+        <label class="setting-toggle"><span><strong>Hot-weather mode</strong><small>Show a reminder to hydrate, seek shade and work during cooler hours.</small></span><input id="hotWeatherToggle" type="checkbox"></label>
+        <label class="setting-toggle"><span><strong>Gentle reminders</strong><small>Show flexible break suggestions in your daily rhythm.</small></span><input id="breaksToggle" type="checkbox" checked></label>
+        <label class="setting-toggle"><span><strong>Dark appearance</strong><small>Use a darker colour scheme.</small></span><input id="darkToggle" type="checkbox"></label>
+      </article>
+      <article class="settings-card">
+        <h3>Private data on this phone</h3>
+        <p class="muted">Your tasks and settings are saved in this browser on this device. They are not automatically synced to another phone. Clearing browser data may erase them, so export a backup occasionally.</p>
+        <div class="button-stack">
+          <button id="exportButton" class="secondary-button" type="button">Export backup (.json)</button>
+          <label class="secondary-button file-button">Import backup (.json)<input id="importInput" type="file" accept=".json,application/json" hidden></label>
+          <button id="resetButton" class="danger-button" type="button">Reset all planner data</button>
+        </div>
+      </article>
+      <article class="settings-card">
+        <h3>Install on Android</h3>
+        <p class="muted">After publishing with GitHub Pages, open the site in Chrome on your phone, tap the three-dot menu, then choose <strong>Install app</strong> or <strong>Add to Home screen</strong> if offered.</p>
+        <p id="offlineStatus" class="status-line">Checking offline support…</p>
+      </article>
+    </section>
+  </main>
+
+  <footer class="app-footer"><span>Made for steady progress.</span><span>Private on this device · <span id="saveStatus">Saved locally</span></span></footer>
+
+  <dialog id="taskDialog" class="task-dialog">
+    <form id="taskForm" method="dialog">
+      <div class="dialog-heading"><div><p class="eyebrow">MAKE IT ACTIONABLE</p><h2 id="dialogTitle">Add a task</h2></div><button id="closeDialog" class="icon-button" type="button" aria-label="Close">×</button></div>
+      <input id="taskId" type="hidden">
+      <label class="field-label" for="taskTitle">Task</label>
+      <input id="taskTitle" class="field-input" maxlength="120" required placeholder="e.g. Measure the next wall section">
+      <label class="field-label" for="taskCategory">Category</label>
+      <select id="taskCategory" class="field-input">
+        <option value="house">House building</option><option value="practical">Practical jobs</option><option value="website">Website work</option><option value="leadbright">LeadBright</option><option value="personal">Personal</option>
+      </select>
+      <label class="field-label" for="taskDate">Date</label>
+      <input id="taskDate" class="field-input" type="date">
+      <label class="field-label" for="taskNotes">Notes (optional)</label>
+      <textarea id="taskNotes" class="field-input" rows="3" maxlength="500" placeholder="Materials, details, or the next tiny step…"></textarea>
+      <div class="dialog-actions"><button id="cancelTask" class="secondary-button" type="button">Cancel</button><button class="primary-button" type="submit">Save task</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="./app.js" defer></script>
+</body>
+</html>
