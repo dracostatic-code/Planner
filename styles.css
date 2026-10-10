@@ -17,3 +17,14 @@ body.dark .welcome-card{background:linear-gradient(120deg,#1d345a,#2b5091)}
 @media(min-width:700px){.app-shell{padding-bottom:42px}.view#view-today{display:block}.summary-grid{max-width:580px}.task-list{gap:10px}.task-card{padding:16px 18px}.stats-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.app-header{padding-top:36px}.welcome-card{padding:32px 36px}}
 @media(max-width:420px){.app-header{padding:22px 16px 17px}.app-shell{padding:0 14px 25px}.welcome-card{padding:21px 18px;border-radius:20px}.date-bubble{width:69px;height:69px}.date-bubble span{font-size:1.4rem}.tabs{margin:16px 0 24px}.tab{padding:11px 10px;font-size:.83rem}.section-heading h2{font-size:1.3rem}.primary-button{padding:11px 12px}.summary-card{padding:13px 11px;gap:9px}.summary-icon{width:36px;height:36px}.summary-card strong{font-size:1.3rem}.app-footer{padding:10px 15px 25px}.task-dialog{padding:19px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+/* Keep routine descriptions aligned and spaced correctly */
+#scheduleList .task-notes {
+  white-space: normal;
+  text-align: left;
+  line-height: 1.5;
+  margin: 7px 0 0;
+}
+
+#scheduleList .summary-icon {
+  flex-shrink: 0;
+}
