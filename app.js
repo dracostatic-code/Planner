@@ -343,7 +343,165 @@
   $("exportButton").addEventListener("click", exportBackup);
   $("importInput").addEventListener("change", event => importBackup(event.target.files && event.target.files[0]));
   $("resetButton").addEventListener("click", resetAll);
+        ([id, name]) => ({
+          id,
+          name,
+          icon: defaultTabIcons[id] || "📁"
+        })
+      );
+    }
 
+    // Keep categories belonging to existing or imported tasks.
+    for (const task of state.tasks) {
+      if (
+        task.category &&
+        !state.customTabs.some(tab => tab.id === task.category)
+      ) {
+        state.customTabs.push({
+          id: task.category,
+          name: defaultTabLabels[task.category] || "Recovered category",
+          icon: defaultTabIcons[task.category] || "📁"
+        });
+      }
+    }
+
+    Object.keys(CATEGORY_LABELS).forEach(key => {
+      delete CATEGORY_LABELS[key];
+    });
+    Object.keys(CATEGORY_ICONS).forEach(key => {
+      delete CATEGORY_ICONS[key];
+    });
+
+    state.customTabs.forEach(tab => {
+      CATEGORY_LABELS[tab.id] = tab.name;
+      CATEGORY_ICONS[tab.id] = tab.icon || "📁";
+    });
+
+    if (
+      taskFilter !== "all" &&
+      !state.customTabs.some(tab => tab.id === taskFilter)
+    ) {
+      taskFilter = "all";
+    }
+
+    $("taskFilters").innerHTML =
+      '<button class="filter-chip" data-filter="all" type="button">All</button>' +
+      state.customTabs.map(tab => `
+        <button class="filter-chip"
+                data-filter="${escapeHTML(tab.id)}"
+                type="button">
+          ${escapeHTML(tab.name)}
+        </button>
+      `).join("");
+
+    const selectedCategory = $("taskCategory").value;
+    $("taskCategory").innerHTML = state.customTabs.map(tab => `
+      <option value="${escapeHTML(tab.id)}">
+        ${escapeHTML(tab.name)}
+      </option>
+    `).join("");
+
+    if (state.customTabs.some(tab => tab.id === selectedCategory)) {
+      $("taskCategory").value = selectedCategory;
+    }
+
+    $("deleteCategoryTab").disabled = taskFilter === "all";
+  }
+
+  const tabControls = document.createElement("div");
+  tabControls.className = "button-stack";
+  tabControls.style.marginBottom = "16px";
+  tabControls.innerHTML = `
+    <button id="addCategoryTab"
+            class="secondary-button" type="button">
+      ＋ Add tab
+    </button>
+    <button id="deleteCategoryTab"
+            class="secondary-button" type="button">
+      Delete selected tab
+    </button>
+  `;
+  $("taskFilters").after(tabControls);
+
+  const originalRender = render;
+  render = function () {
+    syncCustomTabs();
+    originalRender();
+  };
+
+  const originalOpenTaskDialog = openTaskDialog;
+  openTaskDialog = function (task = null) {
+    originalOpenTaskDialog(task);
+    if (!$("taskCategory").value) {
+      $("taskCategory").value = state.customTabs[0].id;
+    }
+  };
+
+  $("addCategoryTab").addEventListener("click", () => {
+    const answer = prompt("What would you like to name your new tab?");
+    if (answer === null) return;
+
+    const name = answer.trim();
+    if (!name) return;
+
+    if (
+      name.toLowerCase() === "all" ||
+      state.customTabs.some(
+        tab => tab.name.toLowerCase() === name.toLowerCase()
+      )
+    ) {
+      alert("Please choose a different tab name.");
+      return;
+    }
+
+    const id = `category-${uid()}`;
+    state.customTabs.push({ id, name, icon: "📁" });
+    taskFilter = id;
+    saveState();
+    render();
+    showToast("Tab added.");
+  });
+
+  $("deleteCategoryTab").addEventListener("click", () => {
+    if (taskFilter === "all") return;
+
+    if (state.customTabs.length === 1) {
+      alert("Keep at least one category. Add another tab first.");
+      return;
+    }
+
+    const selected = state.customTabs.find(tab => tab.id === taskFilter);
+    if (!selected) return;
+
+    const destination = state.customTabs.find(tab => tab.id !== selected.id);
+    const taskCount = state.tasks.filter(
+      task => task.category === selected.id
+    ).length;
+
+    const message = taskCount
+      ? `Delete "${selected.name}"? Its ${taskCount} task(s) will move to "${destination.name}".`
+      : `Delete "${selected.name}"?`;
+
+    if (!confirm(message)) return;
+
+    state.tasks.forEach(task => {
+      if (task.category === selected.id) {
+        task.category = destination.id;
+      }
+    });
+
+    state.customTabs = state.customTabs.filter(
+      tab => tab.id !== selected.id
+    );
+    taskFilter = "all";
+    saveState();
+    render();
+    showToast("Tab deleted.");
+  });
+
+  $("taskFilters").addEventListener("click", () => {
+    $("deleteCategoryTab").disabled = taskFilter === "all";
+  });
   render();
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("./sw.js").then(() => {
