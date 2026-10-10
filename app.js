@@ -509,6 +509,195 @@
   $("taskFilters").addEventListener("click", () => {
     $("deleteCategoryTab").disabled = taskFilter === "all";
   });
+   // Editable daily routines
+  function ensureEditableRoutines() {
+    if (!Array.isArray(state.routines)) {
+      state.routines = ROUTINE.map(item => ({
+        ...item,
+        startDate: RETURN_DATE
+      }));
+    }
+  }
+
+  getActiveRoutine = function () {
+    ensureEditableRoutines();
+    return state.routines.filter(item =>
+      !item.startDate || item.startDate <= todayISO()
+    );
+  };
+
+  function editDailyRoutine(id = null) {
+    ensureEditableRoutines();
+    const existing = state.routines.find(item => item.id === id);
+
+    const name = prompt("Routine name:", existing?.title || "");
+    if (name === null || !name.trim()) return;
+
+    const time = prompt(
+      "Time or time window (for example 8:00 AM):",
+      existing?.time || ""
+    );
+    if (time === null) return;
+
+    const start = prompt(
+      "Start date: YYYY-MM-DD",
+      existing?.startDate || todayISO()
+    );
+    if (start === null) return;
+
+    const startDate = start.trim();
+    const date = new Date(`${startDate}T12:00:00Z`);
+
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(startDate) ||
+      Number.isNaN(date.getTime()) ||
+      date.toISOString().slice(0, 10) !== startDate
+    ) {
+      alert("Please use a valid date, such as 2026-11-11.");
+      return;
+    }
+
+    const detail = prompt("Optional note:", existing?.detail || "");
+    if (detail === null) return;
+
+    const item = {
+      id: existing ? existing.id : `routine-${uid()}`,
+      title: name.trim(),
+      time: time.trim(),
+      detail: detail.trim(),
+      startDate,
+      category: "routine"
+    };
+
+    if (existing) {
+      state.routines = state.routines.map(r =>
+        r.id === id ? item : r
+      );
+    } else {
+      state.routines.push(item);
+    }
+
+    saveState();
+    render();
+    showToast(existing ? "Routine updated." : "Routine added.");
+  }
+
+  renderRoutine = function () {
+    ensureEditableRoutines();
+    const checks = state.routineChecks[todayISO()] || {};
+
+    const rows = state.routines.map(item => {
+      const active = !item.startDate || item.startDate <= todayISO();
+      const done = active && !!checks[item.id];
+      const safeId = escapeHTML(item.id);
+
+      return `
+        <article class="task-card ${done ? "completed" : ""}">
+          ${active ? `
+            <input class="task-check" type="checkbox"
+              data-routine="${safeId}"
+              ${done ? "checked" : ""}
+              aria-label="Mark ${escapeHTML(item.title)} complete">
+          ` : `
+            <span class="summary-icon" aria-hidden="true">◷</span>
+          `}
+          <div class="task-main">
+            <div class="task-title">${escapeHTML(item.title)}</div>
+            <div class="task-meta">
+              ${item.time ? `
+                <span class="time-tag">${escapeHTML(item.time)}</span>
+              ` : ""}
+              <span class="category-tag">
+                ${active ? "Daily routine" : "Upcoming"}
+              </span>
+            </div>
+            ${!active ? `
+              <p class="task-notes">
+                Starts ${escapeHTML(prettyDate(item.startDate))}
+              </p>
+            ` : ""}
+            ${item.detail ? `
+              <p class="task-notes">${escapeHTML(item.detail)}</p>
+            ` : ""}
+          </div>
+          <div class="task-actions">
+            <button class="task-action" type="button"
+              data-routine-edit="${safeId}"
+              aria-label="Edit ${escapeHTML(item.title)}">✎</button>
+            <button class="task-action" type="button"
+              data-routine-delete="${safeId}"
+              aria-label="Delete ${escapeHTML(item.title)}">×</button>
+          </div>
+        </article>
+      `;
+    }).join("");
+
+    const breaks = state.settings.breaks ? `
+      <article class="task-card">
+        <div class="summary-icon">☕</div>
+        <div class="task-main">
+          <div class="task-title">Flexible break</div>
+          <p class="task-notes">
+            Pause, stretch, or drink some water when it suits your day.
+          </p>
+        </div>
+      </article>
+    ` : "";
+
+    $("scheduleList").innerHTML = `
+      <div class="button-stack">
+        <button class="secondary-button" type="button"
+          data-routine-add>＋ Add routine</button>
+      </div>
+      ${rows}
+      ${breaks}
+    `;
+  };
+
+  $("scheduleList").addEventListener("click", event => {
+    const button = event.target.closest("button");
+    if (!button) return;
+
+    if (button.hasAttribute("data-routine-add")) {
+      editDailyRoutine();
+    }
+
+    if (button.hasAttribute("data-routine-edit")) {
+      editDailyRoutine(button.dataset.routineEdit);
+    }
+
+    if (button.hasAttribute("data-routine-delete")) {
+      const id = button.dataset.routineDelete;
+      const item = state.routines.find(r => r.id === id);
+
+      if (
+        !item ||
+        !confirm(`Delete the daily routine "${item.title}"?`)
+      ) return;
+
+      state.routines = state.routines.filter(r => r.id !== id);
+      saveState();
+      render();
+      showToast("Routine deleted.");
+    }
+  });
+
+  const previousRoutineSettings = renderSettings;
+  renderSettings = function () {
+    previousRoutineSettings();
+
+    document.querySelectorAll("#view-settings .routine-line")
+      .forEach(line => line.remove());
+
+    const description = document.querySelector(
+      "#view-settings .settings-card > .muted"
+    );
+
+    if (description) {
+      description.textContent =
+        "Manage routines from Today using Add routine, the pencil to edit, or × to delete. Each routine repeats daily from its start date.";
+    }
+  };
   render();
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("./sw.js").then(() => {
