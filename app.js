@@ -343,7 +343,14 @@
   $("exportButton").addEventListener("click", exportBackup);
   $("importInput").addEventListener("change", event => importBackup(event.target.files && event.target.files[0]));
   $("resetButton").addEventListener("click", resetAll);
-        ([id, name]) => ({
+    // Editable task category tabs
+  const defaultTabLabels = { ...CATEGORY_LABELS };
+  const defaultTabIcons = { ...CATEGORY_ICONS };
+
+  function syncCustomTabs() {
+    if (!Array.isArray(state.customTabs) || !state.customTabs.length) {
+      state.customTabs = Object.entries(defaultTabLabels).map(     
+  ([id, name]) => ({
           id,
           name,
           icon: defaultTabIcons[id] || "📁"
