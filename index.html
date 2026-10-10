@@ -144,6 +144,18 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="./app.js" defer></script>
+
+<script src="./app.js" defer></script>
+
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js")
+        .then(() => console.log("Offline support registered"))
+        .catch(error => console.error("Service worker error:", error));
+    });
+  }
+</script>
 </body>
 </html>
+
