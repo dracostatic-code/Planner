@@ -24,9 +24,9 @@
     {
       id: "feed-am",
       time: "8:00 AM",
-      title: "Feed animals",
+      title: "Feed animals",        
       detail: "Morning animal feeding",
-      category: "routine"
+      category: "routine"            
     },
     {
       id: "feed-pm",
@@ -798,7 +798,8 @@
       Pick up to three things that matter most today.
     </p>
   `;
-  $("todayTasks").previousElementSibling.before(prioritySection);
+   prioritySection.style.marginTop = "0";
+  $("view-today").prepend(prioritySection);
 
   // Task status fields
   const statusControls = document.createElement("div");
